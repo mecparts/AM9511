@@ -1,0 +1,339 @@
+Adding a Floating Point Processor to a CP/M system
+--------------------------------------------------
+
+August 31, 1990 Update
+
+One of my fondest memories is from an old edition of Byte, where 
+the venerable 8080A is rated against an IBM 370, and comes out 
+looking pretty good, except for floating point operations. Here's 
+where the 370 gets to eat our dust, fellow 8 bitters.
+
+For the price of two I/O ports, and a couple of hundred dollars 
+in cash, you can add a hardware floating point processor to your 
+CP/M system. The hardware interface is dead simple; on my Ampro 
+little board, it consists of the single chip floating point 
+processor and a 74LS00 NAND gate. The software interface is 
+equally simple; think of the chip as an RPN calculator, where you 
+push operands on the stack, execute an operation, pop the result 
+off, and you've got the picture.
+
+The chip in question is the AMD 9511A Arithmetic Processor Unit, 
+also known as the Intel 8231A (to save my fingers and your eyes, 
+from here on in I'll refer to it at the APU). It runs around $200 
+Canadian, and it's worth every penny. What can it do? Here's the 
+rundown:
+
+  o 32 bit floating point format,
+  o 32 and 16 bit integer formats,
+  o add, subtract, multiply, divide in all formats,
+  o trig and inverse trig operation in floating point format,
+  o square root, logarithms (natural and base 10), and 
+    exponentiation,
+  o converts between float and 32/16 bit integer formats,
+  o 4 level floating point or 32 bit integer stack,
+  o 8 level 16 bit integer stack,
+  o overflow, underflow, range, divide by zero error indicators
+
+
+There's also a sister chip, the AMD 9512/Intel 8232, that handles 
+floating point only, with single (32 bit) and double (64 bit) 
+precisions. It has the same pin-out at the 9511/8231, but only 
+does the basic four operations: addition, subtraction, 
+multiplication and division.
+
+Before you start
+----------------
+
+A few things to think about should be mentioned right off the 
+top. The APU isn't a scientific calculator; the data range in the 
+floating point format is somewhat restricted. The largest 
+floating point value that can be represented is 9.22E+18; the 
+smallest is 5.42E-20. To put this into some kind of perspective, 
+the single precision IEEE floating point format goes a magnitude 
+of two bigger and smaller. The range of a scientific calculator 
+extends from 9.9E+99 down to 1.0E-99. 
+
+So if you can't stand to lose any of the range on your floating 
+point numbers, this may not be for you.
+
+Second, not all languages are good candidates for adding an APU. 
+At the very least, you'll need to be able to replace some of the 
+runtime library. If there isn't a obvious runtime library, as is 
+the case with BASIC and Pascal, you're pretty much out of luck. 
+Also, the closer that the floating point format used by your 
+language is to the format used by the APU, the better. Something 
+like Cromemco C, which stores it's floating point numbers in BCD, 
+or Turbo Pascal, which uses 6 bytes, are probably best avoided.
+
+Some fairly good candidates are:
+
+  o Turbo Modula-2 (trig and higher math functions successfully 
+    replaced)
+  o Microsoft FORTRAN-80 (commercial packages in the early 80s 
+    reported success with replacing all floating point 
+    operations, and long integer as well)
+  o Aztec C (although the exponent is base 256 rather than base 
+    2, the availability of the source to entire runtime library 
+    raises the possibility of rewriting the whole works).
+
+The Hardware
+------------
+
+Hooking up the APU is very easy. You need to supply the 
+following:
+
+  o +12 and +5 volt supplies
+  o a birectional 8 bit data bus
+  o a 2 to 4MHz TTL level clock (depending on the speed of the 
+    APU chip you buy)
+  o an active high reset line
+  o an active low chip select
+  o an active low read strobe
+  o an active low write strobe
+  o optionally, a connection to the /WAIT line on the Z80
+
+
+Nothing very special is required, but there are a few oddities 
+for a chip supposed designed by Intel for 8080/5 compatibility. 
+First is the active high reset line. Most CPUs, including the 
+8080, 8085 and Zilog's Z80 has active low resets. You'll need an 
+inverter to change the sense of this line. Second is the /PAUSE, 
+or READY output from the APU. While this is of the correct 
+polarity to connect directly to the Z80s /WAIT line, it would 
+have been nice if it had been an open collector output (if this 
+is the only slow device in your system it makes no difference - 
+hook it up direct).
+
+Something to watch out for when your designing your interface is 
+the timing of your chip select and write strobes. The trailing 
+edge of the write pulse _must_ occur at least 60ns before the 
+chip select is deasserted. When I first hooked the APU up the 
+expansion board on my Ampro Little Board, I could not write to 
+the chip because the chip select was derived from the read and 
+write strobes as well as the decoded address. The solution I 
+chose was to permanently ground the chip select pin on the APU, 
+and OR the write strobe with the chip selected generated by the 
+PAL on the expansion board (so the APU is always selected, but 
+only sees a read or write pulse when the port address is 
+correct).
+
+The Software
+------------
+
+I found it convenient to separate the software modules into an 
+APU communications module written in assembler, and a math 
+function module written in a high level language (Modula-2). The 
+communications module, APUlib, handles pushing and popping 
+operands to the APU stack, executing APU commands and returning 
+statuses (stati?), and translating between the IEEE floating 
+point format used by Turbo Modula-2 and the internal APU format.
+The math library, MathLib, calls the routines in APUlib to 
+perform the various trig, log, and exponentiation functions 
+defined in the library.
+
+APUlib contains six routines callable from Modula-2. There are 
+two routines for each data type. The only difference between the 
+two is the number of operands pushed on the stack, one or two.
+
+  o APUfp1 pushes one floating point operand on the APU stack 
+    (after conversion), executes an APU command, pops and 
+    converts a floating point result from the stack;
+  o APUfp2 pushes two floating point operands on the APU stack 
+    (after conversion), executes an APU command, pops and 
+    converts a floating point result from the stack;
+  o APUdi1 pushes one 32 bit integer operand on the APU stack, 
+    executes an APU command, and pops a 32 bit result from the 
+    stack
+  o APUdi2 pushes two 32 bit integer operands on the APU stack, 
+    executes an APU command, and pops a 32 bit result from the 
+    stack
+  o APUsi1 pushes one 16 bit integer operand on the APU stack, 
+    executes an APU command, and pops a 16 bit result from the 
+    stack
+  o APUsi2 pushes two 16 bit integer operands on the APU stack, 
+    executes an APU command, and pops a 16 bit result from the 
+    stack
+
+All of the routines return an integer error code, indicating the 
+success or failure of the APU operation. Zero indicates success, 
+non-zero, failure. The specific code returned is the 4 error bits 
+from the APU status register, shifted left one bit.
+
+All of the routines pass their operands and result by reference 
+(ie a pointer to the data in HL). The floating point routines 
+ALTER THE FORMAT OF THE OPERANDS IN PLACE. This is normally not a 
+good idea! The design of MathLib makcs it possible; all MathLib 
+floating point parameter are passed by value (ie a temporary copy 
+is made on the stack of the variable from the caller). It is this 
+temporary stack copy that is altered.
+
+MathLib is an replacement and extension of the Turbo Modula-2 
+MathLib module. All the MathLib functions have been duplicated, 
+and new routines that represent hardware APU functions (Tan, 
+Arccos, Arcsin, Log, Pwr, etc.) have been added.
+
+No attempt has been made in MathLib to limit incoming floating 
+point numbers to the subrange of values that can be handled by 
+the APU. This hasn't proved to be a problem with the application 
+I've been working with, but keep it in mind. If anyone knows of a 
+fast way to handle it, perhaps they could add it to the next 
+release.
+
+To use APUlib, and MathLib, you must first compile the .DEF and 
+converted from .REL format to .MCD format with the REL utility. 
+Delete the existing MATHLIB.MCD and MATHLIB.SYM from your 
+SYSLIB.LIB, and add in APULIB.MCD and .SYM, and MATHLIB.MCD and 
+automatically use the new APU based functions. .COM files will 
+need to be relinked, of course.
+
+Remember that for programs using overlays, APULIB will have to be 
+included with MATHLIB.
+
+What you can expect
+-------------------
+
+If your application makes use of lots of trigonometric functions, 
+logarithms, or square roots, you will notice the increase in 
+speed. Will you EVER notice! A graphic sky chart generator 
+program written in Turbo Modula-2, SKY, used to take 3m32s 
+seconds to read in and perform trig on a database of 2000+ stars. 
+Displaying the data took 0m53s. Just by replacing MathLib, read 
+time when down to 0m55s, and display time to 0m22s!
+
+As a experiment, I created four new functions in MathLib: Fadd, 
+Fsub, Fdiv and Fmul, to replace the floating point addition, 
+subtraction, division and multiplication operators. After 
+altering a great deal of source code to use the function calls, I 
+discovered that in some cases, the new code took longer! I didn't 
+persue the matter, but it appears at first blush that the 
+overhead of calling the MathLib function, then the APULib 
+routine, is greater than the time required to perform the 
+operation in software. I'm not sure that I believe this, but I 
+haven't disassembled the code to see just what is going on. But 
+if anyone knows where in TM-2 that the basic REAL and 
+LONGINT, for that matter, operators are handled, I would be _very_ 
+interested to hear from them.
+
+APU Floating Point Format
+-------------------------
+
+The format used by the APU to store a float point number is a 
+normalized 24 bit mantissa, 7 bit 2's complement exponent, and 1 
+bit mantissa sign. In memory, it looks like this
+
+adr+0 - least significant byte of mantissa
+adr+1 - middle byte of mantissa
+adr+2 - most significant byte of mantissa
+adr+3 - 2s complement exponent (bits 0-6) & mantissa sign (bit 7)
+
+The most significant bit of adr+2 is always one (normalized 
+format, no hidden most significant bit), except for the value 
+zero, which is represented by four bytes of zero.
+
+This is also the order in which floating point numbers are pushed 
+into the APU; from least significant byte to most significant. 
+When popping results from the stack, the most significant byte 
+comes off first.
+
+To convert the APU floating point format to and from IEEE format 
+involves two steps: converted a 7 bit 2s complement exponent to 
+an 8 bit exponent with a bias of 127, and shifting the least 
+significant bit of the exponent into the most significant bit of 
+the mantissa. In the IEEE format, the most significant bit of the 
+mantissa is assumed to be one, and it's place is used for the 
+least significant bit of the exponent. The exponent itself is 
+biased by 127; an exponent of 0 represent the value zero. The 
+purpose of biasing the exponent is to make comparing two floating 
+point numbers easier (simply byte by byte comparison can be 
+used).
+
+There _really_ should be a check in the pushf routine in APUlib 
+to check for IEEE exponents that cannot be converted to APU 
+exponents (8 bits into 7 bits). There's no problem in popf, as 7 
+bits can always be expanded to 8.
+
+Conversion to and from other floating point formats will involve 
+the same steps. If the number comes in not normalized (there is 
+no assumed mantissa msb set, or the msb of the mantissa is not 
+set), it must be normalized. Any bias on the exponent must be 
+removed, and if the exponent is not base 2, the mantissa and 
+exponent must be adjusted so that it is. Honestly, I'm not sure 
+how to do this, because I haven't had to do it yet!
+adjusted
+
+Using the APU with another language
+-----------------------------------
+
+To use the APU with another language, several things need to be 
+done:
+
+  o the floating point conversions in pushf and popf will need to 
+    be changed to reflect the floating point format used in the 
+    language
+  o the parameter passing mechanism used by the language will 
+    dictate changes to the APUlib routines; TM-2 passes 
+    everything on the stack, while FORTRAN-80 has a different 
+    scheme
+  o the math routines in the language's link library will have to 
+    be replaced with APU equivalents
+  o your applications must be recompiled with the new link 
+    library
+
+I realize this is _extremely_ sketchy, but every language will 
+present different problems, and will require different solutions. 
+All I can tell you is _what_ I think you'll have to do, and 
+you'll have to carry the ball from there and figure out _how_ to 
+do it.
+
+Final notes
+-----------
+
+A search of the SIG/M and CPMUG user libraries turned up 
+virtually nothing in the way of floating point software, hardware 
+descriptions, or documentation. Nor have I seen much in my 
+current travels on the Z-nodes. I hope this library goes a little 
+way towards filling this void.
+
+On the off chance you're that one in a thousand person who wants 
+to use APUlib with Turbo Modula-2, but can't use the REL utility 
+because you can't generate a system with a large enough TPA for 
+REL to run, I've included APULIB.MCD and APULIB.SYM. Normally, 
+you would have to reassemble APULIB.MAC with your I/O ports, but 
+I've gone through the .MCD file and made a note of all the places 
+where the I/O port addresses occur (the current values are 08 for 
+the data port, and 09 for the status port). If worse comes to 
+worse, you can always patch the .MCD file with your favourite hex 
+editor.
+
+Data port offsets (in hex):   0060, 0082, 00A0, 00C0, 00CD, 00FE
+Control port offsets(in hex): 0130, 0132
+
+If you load APULIB.MCD into memory with DDT or the like, add 100 
+hex to the offsets to get their locations in memory.
+
+My sincere thanks to David Goodenough for pointing me towards 
+this chip.
+
+And of course, APUlib and MathLib, both original works by me, are 
+released to the public domain. Do with them as you like, people.
+
+Happy APUing!
+
+Wayne Hortensius
+August 31, 1990
+
+8/31/90 Update notes
+
+In spite of a couple of mistakes in APULIB.MAC (one benign and
+one nasty), I've been happily using these routines for the
+better part of a year now. Apart from fixing the two mistakes,
+some code speedups have also been incorporated in this release.
+
+My UUCP address is absent from this release as Canada Remote
+Systems has bit the dust, and so I now longer have access to
+Usenet.
+
+
+
+
+

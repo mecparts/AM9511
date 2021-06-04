@@ -1,0 +1,265 @@
+;
+;	Note: assemble with M80 if you intend to use this file with Turbo
+;	Modula-2 . The REL utility used by TM-2 chokes on the REL files
+;	output by many other relocatable assemblers.
+;
+	.z80
+	cseg
+;
+;	APULIB - interface between Turbo Modula-2 and AMD 9511/Intel 8231.
+;		This file contains six routines callable from TM-2.
+;		All return an integer error code, details as follows:
+;			 0 - no error
+;			32 - divide by 0
+;			 8 - square root or log of negative number
+;			24 - argument of inverse sine, cosine or eX too big
+;		4,12,20,28 - underflow
+;		2,10,18,26 - overflow
+;
+;		Each routine takes either one or two arguments and
+;		returns a single result of the same type as the argument.
+;		fp routines operate on floating point numbers, di routines
+; 		on long integers, si on short integers.
+;
+;		IT IS THE RESPONSIBILITY OF THE PROGRAMMER TO ENSURE THAT
+;		THE OPCODE USED IS APPROPRIATE FOR THE DATA TYPE OF THE
+;		PROCEDURE. YOU HAVE BEEN WARNED...
+;
+; (* floating-point A op floating-point B *)
+; PROCEDURE APUfp2(opcode : INTEGER; VAR a,b,result : REAL) : INTEGER;
+; (* op floating-point A *)
+; PROCEDURE APUfp1(opcode : INTEGER; VAR a,result : REAL) : INTEGER;
+; (* Long Int A op Long Int B*)
+; PROCEDURE APUdi2(opcode : INTEGER; VAR a,b,result : LONGINT) : INTEGER;
+; (* op Long Int A *)
+; PROCEDURE APUdi1(opcode : INTEGER; VAR a,result : LONGINT) : INTEGER;
+; (* Short Int A op Short Int B*)
+; PROCEDURE APUsi2(opcode : INTEGER; VAR a,b,result : INTEGER) : INTEGER;
+; (* op Short Int A *)
+; PROCEDURE APUsi1(opcode : INTEGER; VAR a,result : INTEGER) : INTEGER;
+;
+;	11/06/89  W. Hortensius  1st working version
+;	11/18/89  "      "       various speed ups - optimize register
+;				 usage, removed unnecessary pushs/pops,
+;				 put some code in-line rather than calls, etc.
+;	 8/31/90  "      "       more speed ups - reordered pushf to remove
+;				 1 jp from most invocations, removed redundant
+;				 reloading of C register with APUdata port
+;				 address. Also fixed nasty bugs in popf and
+;				 APUdi1 routines (beware ye of cut and paste!)
+;
+APUdata	equ	08H			; APU base port address
+APUctrl	equ	APUdata+1
+;
+; PROCEDURE APUfp2(opcode : INTEGER; VAR a,b,result : REAL) : INTEGER;
+;
+	PUBLIC	APUfp2
+APUfp2:
+	pop	de			; return address
+	pop	hl			; result address
+	exx				; save return & result addresses
+	pop	hl			; b address
+	call	pushf			; give it to APU
+	pop	hl			; a address
+	call	pushf			; give it to APU
+	pop	hl			; opcode
+	call	APUcmd			; process command
+	exx				; move result address to HL
+	call	popf			; get result
+	ex	de,hl
+	jp	(hl)			; return to caller
+;
+; PROCEDURE APUfp1(opcode : INTEGER; VAR a,result : REAL) : INTEGER;
+;
+	PUBLIC	APUfp1
+APUfp1:
+	pop	de			; return address
+	pop	hl			; result address
+	exx				; save return & result addresses
+	pop	hl			; a address
+	call	pushf			; give it to APU
+	pop	hl			; opcode
+	call	APUcmd			; process command
+	exx				; move result address to HL
+	call	popf			; get result
+	ex	de,hl
+	jp	(hl)			; return to caller
+;
+; PROCEDURE APUdi2(opcode : INTEGER; VAR a,b,result : LONGINT) : INTEGER;
+;
+	PUBLIC	APUdi2
+APUdi2:
+	pop	de			; return address
+	pop	hl			; result address
+	exx				; save return & result addresses
+	pop	hl			; b address
+	ld	bc,4*256+APUdata	; output 4 bytes to APU data
+	otir
+	pop	hl			; a address
+	ld	b,4			; output 4 bytes to APU data
+	otir
+	pop	hl			; opcode
+	call	APUcmd			; process command
+	exx				; move result address to HL
+	inc	hl
+	inc	hl
+	inc	hl			; point to msb of destination
+	ld	b,4			; input 4 bytes from APU data
+	indr
+	ex	de,hl
+	jp	(hl)			; return to caller
+;
+; PROCEDURE APUdi1(opcode : INTEGER; VAR a,result : LONGINT) : INTEGER;
+;
+	PUBLIC	APUdi1
+APUdi1:
+	pop	de			; return address
+	pop	hl			; result address
+	exx				; save return & result addresses
+	pop	hl			; a address
+	ld	bc,4*256+APUdata	; output 4 bytes to APU data
+	otir
+	pop	hl			; opcode
+	call	APUcmd			; process command
+	exx				; move result address to HL
+	inc	hl
+	inc	hl
+	inc	hl			; point to msb of destination
+	ld	b,4			; input 4 bytes from APU data
+	indr
+	ex	de,hl
+	jp	(hl)			; return to caller
+;
+; PROCEDURE APUsi2(opcode : INTEGER; VAR a,b,result : INTEGER) : INTEGER;
+;
+	PUBLIC	APUsi2
+APUsi2:
+	pop	de			; return address
+	pop	hl			; result address
+	exx				; save return & result addresses
+	pop	hl			; b address
+	ld	b,2*256+APUdata		; output 2 bytes to APU data
+	otir
+	pop	hl			; a address
+	ld	b,2			; output 2 bytes to APU data
+	otir
+	pop	hl			; opcode
+	call	APUcmd			; process command
+	exx				; move result address to HL
+	inc	hl			; point to msb
+	ld	b,2
+	indr				; get result
+	ex	de,hl
+	jp	(hl)			; return to caller
+;
+; PROCEDURE APUsi1(opcode : INTEGER; VAR a,result : INTEGER) : INTEGER;
+;
+	PUBLIC	APUsi1
+APUsi1:
+	pop	de			; return address
+	pop	hl			; result address
+	exx				; save return & result addresses
+	pop	hl			; a address
+	ld	bc,2*256+APUdata	; output 2 bytes to APU data
+	otir
+	pop	hl			; opcode
+	call	APUcmd			; process command
+	exx				; move result address to HL
+	inc	hl			; point to msb
+	ld	b,2
+	indr				; get result
+	ex	de,hl
+	jp	(hl)			; return to caller
+;
+; pushf: push floating point number into APU
+; hl points to lsb of 4 byte number
+;
+pushf:					; begin conversion from IEEE
+	inc	hl			; to AMD format
+	inc	hl			; point to mantissa msb
+	ld	b,(hl)
+	set	7,(hl)			; set msb of mantissa
+	inc	hl			; point to exponent
+	ld	a,(hl)
+	and	10000000b		; isolate mantissa sign
+	ld	c,a			; save it
+	ld	a,(hl)			; fetch exponent again
+	rl	b			; move lsb of exponent into carry
+	rla				; get whole exponent in A
+	or	a
+	jr	z,push0			; exponent is 0 - whole number is 0
+	sub	07Eh			; remove bias from exponent
+	jp	p,AMDpos		; exponent is >= 0
+	or	40h			; set sign bit of 7 bit exponent
+AMDpos:	and	7Fh			; reset mantissa sign
+	or	c			; set from original mantissa sign
+	ld	(hl),a			; update exponent in place
+	dec	hl			; restore pointer to HL (3 cycles
+	dec	hl			; faster than push hl/pop hl pair)
+	dec	hl
+pushf1:
+	ld	bc,4*256+APUdata	; output 4 bytes to APU data
+	otir
+	ret
+;
+push0:	ld	b,4			; set up AMD format 0
+push0lp:
+	ld	(hl),a			; zero out whole fp number
+	dec	hl
+	djnz	push0lp
+	inc	hl			; point to lsb of number
+	jp	pushf1
+;
+; popf: pop floating point number from APU and convert to IEEE format
+; hl points to lsb of 4 byte destination
+;
+popf:
+	inc	hl
+	inc	hl
+	inc	hl			; point to msb of destination
+	ld	bc,4*256+APUdata	; input 4 bytes from APU data
+	indr
+	inc	hl			; point to lsb of destination
+	inc	hl
+	inc	hl			; point to msb of mantissa
+	rl	(hl)			; examine msb of mantissa
+	inc	hl			; point to exponent
+	jr	nc,pop0			; make an IEEE fp 0
+	ld	a,(hl)			; fetch exponent & mantissa sign
+	and	80h			; isolate mantissa sign
+	ld	c,a
+	ld	a,(hl)			; fetch exponent
+	and	07fh			; mask mantissa sign out
+	add	a,a			; copy b6 into b7
+	sra	a			; (sign extend 7 bit exponent)
+	add	a,07eh			; bias for IEEE exponent
+	dec	hl			; point back to mantissa
+	srl	a			; shift lsb of exponent
+	rr	(hl)			; into msb of mantissa
+	or	c			; or mantissa sign back in
+	inc	hl
+	ld	(hl),a			; set up IEEE exponent
+	ret
+pop0:	ld	b,4			; set up IEEE format 0
+pop0lp:
+	ld	(hl),a			; zero out whole fp number
+	dec	hl
+	djnz	pop0lp
+	ret
+;
+; APUcmd: output command in L to APU and wait until APU signals completion
+;
+APUcmd:
+	ld	a,l
+	out	(APUctrl),a
+APUwait:
+	in	a,(APUctrl)
+	rla				; rotate busy bit into carry
+	jr	c,APUwait		; loop while busy
+	and	00111100b		; mask out error code
+	ld	l,a			; H should already be 0 from pop hl
+					; in caller... saves a uSec
+	ex	(sp),hl			; put error code on stack
+	jp	(hl)			; and return to caller
+;
+	end

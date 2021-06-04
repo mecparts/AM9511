@@ -1,0 +1,36 @@
+DEFINITION MODULE MathLib;
+(*
+	MathLib - a replacement MathLib for Turbo Modula-2. This MathLib
+	uses APUlib and the AMD 9511 arithmetic processor unit.
+
+	11/18/89 Wayne Hortensius
+*)
+
+EXCEPTION
+  ArgumentError;
+  
+(* APU functions with exact Mathlib equivalents *)
+PROCEDURE Sqrt(a : REAL) : REAL;
+PROCEDURE Exp(a : REAL) : REAL;
+PROCEDURE Ln(a : REAL) : REAL;
+PROCEDURE Sin(a : REAL) : REAL;
+PROCEDURE Cos(a : REAL) : REAL;
+PROCEDURE Arctan(a : REAL) : REAL;
+
+(* MathLib procedures with no equivalent APU function *)
+PROCEDURE Entier(a : REAL) : INTEGER;
+PROCEDURE Randomize(n : CARDINAL);
+PROCEDURE Random() : REAL;
+
+(* APU functions with no MathLib equivalent *)
+PROCEDURE Arccos(a : REAL) : REAL;
+PROCEDURE Arcsin(a : REAL) : REAL;
+PROCEDURE Fadd(a,b : REAL) : REAL;
+PROCEDURE Fdiv(a,b : REAL) : REAL;
+PROCEDURE Fmul(a,b : REAL) : REAL;
+PROCEDURE Fsub(a,b : REAL) : REAL;
+PROCEDURE Log(a : REAL) : REAL;
+PROCEDURE Pwr(a,b : REAL) : REAL;
+PROCEDURE Tan(a : REAL) : REAL;
+
+END MathLib.
