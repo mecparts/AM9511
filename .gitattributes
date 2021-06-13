@@ -1,2 +1,3 @@
 *.mac linguist-language=Assembly
 *.for linguist-documentation
+*.FOR linguist-documentation
